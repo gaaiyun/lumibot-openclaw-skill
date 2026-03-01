@@ -1,0 +1,22 @@
+backtesting:
+  data_source: yahoo
+  start_date: "2023-01-01"
+  end_date: "2024-01-01"
+  initial_cash: 100000
+  commission: 0.001
+
+live_trading:
+  broker: alpaca
+  paper_trading: true
+  risk_limit: 0.02
+  max_position_size: 0.1
+
+strategies:
+  buy_and_hold:
+    enabled: true
+    symbols: ["AAPL", "MSFT", "GOOGL"]
+  
+  momentum:
+    enabled: true
+    period: 20
+    symbols: ["TSLA", "NVDA"]
