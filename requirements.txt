@@ -1,7 +1,9 @@
-lumibot>=3.0.0
+# v2 离线对比（python __main__.py compare / list-strategies）所需 —— 标准库 + yfinance
 yfinance>=0.2.0
-pandas>=2.0.0
-numpy>=1.24.0
-matplotlib>=3.7.0
-python-dotenv>=1.0.0
+
+# v1 真回测（python __main__.py backtest）所需
+# pip install lumibot pandas numpy matplotlib
+
+# 配置加载相关（部分用户的 config/default.yaml 解析需要）
 pyyaml>=6.0.0
+python-dotenv>=1.0.0

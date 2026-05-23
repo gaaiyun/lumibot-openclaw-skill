@@ -1,336 +1,164 @@
-# Lumibot Skill for OpenClaw
+# lumibot-openclaw-skill
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Lumibot](https://img.shields.io/badge/Powered%20by-Lumibot-green.svg)](https://lumibot.lumiwealth.com/)
+围绕 [Lumibot](https://github.com/Lumiwealth/lumibot) 的策略库 + 离线对比工具。
 
-**统一的回测和实盘交易框架 - OpenClaw 集成版**
+两条路径：
 
-基于 [Lumibot](https://github.com/Lumiwealth/lumibot) 的 OpenClaw Skill，提供统一的回测和实盘交易接口。
+1. **lumibot 真回测**（需要 `pip install lumibot`）—— 把策略类喂给 `YahooDataBacktesting` 跑事件驱动回测。
+2. **离线纯逻辑对比**（标准库 + 可选 yfinance）—— 把策略的 `decide()` 纯函数喂入价格序列，跑一遍极简事件回测，输出多策略对比表。
 
----
+第二条路径是 v2 新增的核心 —— Lumibot 真回测要起本地服务 + 拉数据缓存几十秒，
+不适合 CI 跑 / 不适合"在五只票上五个策略各跑一遍出表"这种粗筛。
 
-## 🚀 快速开始
+## v2 新增
 
-### 1. 安装依赖
+| 模块 | 干什么 |
+|---|---|
+| `scripts/strategies/` | 5 个内置策略：`buy_and_hold` / `momentum` / `dual_ma` / `mean_reversion` / `rsi_reversal`。每个策略把 `decide(prices, position, params) -> Decision` 拆出来当纯函数，便于单测 |
+| `scripts/simple_backtester.py` | 极简事件回测：逐 step 喂价格调 `decide`，记录组合净值、决策、交易数 |
+| `scripts/compare.py` | 多策略 + 同数据 → CompareRow 表（TotalRet / AnnRet / AnnVol / Sharpe / MaxDD / Trades） |
+| `__main__.py` | 统一 CLI：`backtest` / `compare` / `list-strategies` |
+| `tests/` | 43 个 pytest，无 lumibot / yfinance 依赖，100ms 跑完 |
 
-```bash
-cd C:\Users\gaaiy\.openclaw\workspace\skills\lumibot-skill
-
-# 安装核心依赖
-pip install lumibot yfinance pandas numpy matplotlib
-```
-
-### 2. 运行示例回测
-
-```bash
-# 回测买入持有策略
-python scripts/backtest.py --strategy buy_and_hold --symbol AAPL --start 2023-01-01 --end 2024-01-01
-
-# 回测动量策略
-python scripts/backtest.py --strategy momentum --symbol TSLA --start 2023-01-01 --end 2024-01-01
-```
-
-### 3. 查看策略模板
+## 安装
 
 ```bash
-# 列出所有可用策略模板
-python scripts/list_templates.py
-
-# 创建新策略
-python scripts/create_strategy.py --name my_strategy --template momentum
+pip install -r requirements.txt
+# 离线 compare 路径：仅需 yfinance（标准库够剩下的）
+# 真回测路径：还需 pip install lumibot pandas numpy matplotlib
 ```
 
----
+## 快速开始
 
-## 📖 功能特性
+```bash
+# 列出所有内置策略 + 默认参数
+python __main__.py list-strategies
 
-### 统一的回测和实盘代码
-- ✅ **相同代码** - 回测和实盘使用相同的策略代码
-- ✅ **快速切换** - 一键从回测切换到实盘
-- ✅ **无缝过渡** - 回测验证后直接上线
+# 离线对比：把 5 个策略在 AAPL 上跑一遍出表（用 yfinance）
+python __main__.py compare --symbol AAPL --start 2023-01-01 --end 2024-01-01 \
+    -o report.json
 
-### 多资产类别支持
-- ✅ **股票** - 美股、A股等
-- ✅ **期权** - 期权策略回测
-- ✅ **加密货币** - BTC、ETH 等
-- ✅ **期货** - 商品期货、股指期货
-- ✅ **外汇** - FOREX 交易
+# 或者用本地 CSV（不联网）
+python __main__.py compare --csv data/aapl.csv -o report.json
 
-### 强大的回测引擎
-- ✅ **历史数据** - 支持多数据源（Yahoo, ThetaData, Polygon）
-- ✅ **快速回测** - 优化的回测引擎
-- ✅ **详细报告** - 完整的性能指标
-- ✅ **可视化** - 图表展示回测结果
+# 用真 lumibot 回测单策略（需要 pip install lumibot）
+python __main__.py backtest momentum --symbol TSLA --start 2023-01-01 --end 2024-01-01
+```
 
-### 实盘交易支持
-- ✅ **多券商** - Interactive Brokers, Alpaca, Tradier 等
-- ✅ **实时数据** - 实时行情和交易
-- ✅ **风险管理** - 内置风险控制
-- ✅ **订单管理** - 完整的订单生命周期
+`compare` 命令是核心 —— 同一份数据上 5 个策略各跑一遍，按 Sharpe 排序出表，
+不用提前挑指标 / 挑参数地图地"我的策略很赚钱"。
 
----
+## 一个真实的对比输出
 
-## 📝 使用示例
+```
+$ python __main__.py compare --csv data/synth.csv
+[ok] 价格序列长度 253（来自 data/synth.csv）
 
-### 示例 1: 买入持有策略
+Strategy        TotalRet  AnnRet  AnnVol  Sharpe  MaxDD   Trades
+----------------------------------------------------------------
+mean_reversion  24.90%    25.35%  8.50%   2.66    -2.35%  7
+buy_and_hold    67.49%    71.54%  21.95%  2.46    -8.32%  1
+momentum        48.83%    51.64%  19.42%  2.15    -4.63%  15
+dual_ma         45.75%    48.85%  20.59%  1.93    -8.30%  6
+rsi_reversal    11.06%    11.24%  5.77%   1.85    -2.35%  3
+```
+
+排序按 Sharpe 降序。`mean_reversion` 收益不是最高，但风险调整后回报最好 ——
+在 22% 年化波动率的上涨行情里，`buy_and_hold` 拿到 67% 总回报但回撤也大。
+按你自己的偏好（追求 Sharpe / 追求总收益 / 最小回撤）挑列读。
+
+## 库调用
 
 ```python
-from lumibot.strategies import Strategy
-from lumibot.backtesting import YahooDataBacktesting
+from scripts.strategies import STRATEGIES, Momentum
+from scripts.simple_backtester import run
+from scripts.compare import compare_strategies, render_table
 
-class BuyAndHold(Strategy):
-    def initialize(self):
-        self.sleeptime = "1D"
-    
-    def on_trading_iteration(self):
-        if self.first_iteration:
-            symbol = "AAPL"
-            price = self.get_last_price(symbol)
-            quantity = self.portfolio_value // price
-            order = self.create_order(symbol, quantity, "buy")
-            self.submit_order(order)
+# 单策略
+momentum = Momentum()
+result = run(momentum, prices=[100, 101, 102, ...],
+             initial_cash=10_000, params={"period": 20})
+print(f"final value: {result.final_value:.2f}, "
+      f"trades: {result.n_trades}")
 
-# 回测
-BuyAndHold.backtest(
-    YahooDataBacktesting,
-    start_date="2023-01-01",
-    end_date="2024-01-01"
-)
+# 多策略对比
+instances = {name: cls() for name, cls in STRATEGIES.items()}
+rows = compare_strategies(instances, prices=[...], initial_cash=10_000)
+print(render_table(rows))
 ```
 
-### 示例 2: 动量策略
+## 内置策略
 
-```python
-class Momentum(Strategy):
-    def initialize(self):
-        self.sleeptime = "1D"
-        self.period = 20
-    
-    def on_trading_iteration(self):
-        symbol = self.parameters["symbol"]
-        prices = self.get_historical_prices(symbol, self.period, "day")
-        
-        if prices.df["close"][-1] > prices.df["close"].mean():
-            if not self.get_position(symbol):
-                self.buy_all(symbol)
-        else:
-            if self.get_position(symbol):
-                self.sell_all(symbol)
-```
+| 名称 | 信号 | 默认参数 |
+|---|---|---|
+| `buy_and_hold` | 首迭代 all-in，不卖 | `allocation=0.95` |
+| `momentum` | 价 > MA(period) → 买；价 ≤ MA → 卖 | `period=20` |
+| `dual_ma` | MA(fast) 上穿 MA(slow) → 买；下穿 → 卖 | `fast_period=10, slow_period=30` |
+| `mean_reversion` | z-score < -threshold → 买；> +threshold → 卖 | `period=20, z_threshold=1.5` |
+| `rsi_reversal` | RSI < oversold → 买；> overbought → 卖 | `period=14, oversold=30, overbought=70` |
 
-### 示例 3: 命令行使用
+要加新策略：
 
-```bash
-# 回测策略
-python scripts/backtest.py \
-  --strategy buy_and_hold \
-  --symbol AAPL \
-  --start 2023-01-01 \
-  --end 2024-01-01 \
-  --initial-cash 100000
+1. 在 `scripts/strategies/` 新建 `my_strategy.py`，参考 `momentum.py` 的结构
+2. 实现 `_MyStrategyLogic.decide(prices, position, params) -> Decision`
+3. 在 `scripts/strategies/__init__.py` 注册到 `STRATEGIES` 字典
 
-# 查看结果
-python scripts/show_results.py --result-file results/backtest_20240301.json
-```
+`decide` 返回 `Decision.buy(reason)` / `Decision.sell(reason)` / `Decision.hold(reason)`，
+回测器和 lumibot 包装层都按 `decision.action` 走。
 
----
-
-## ⚙️ 配置说明
-
-### 环境变量
-
-创建 `.env` 文件：
-
-```bash
-# 数据源配置
-BACKTESTING_DATA_SOURCE=yahoo  # yahoo, thetadata, polygon, ibkr
-
-# ThetaData（推荐，需要订阅）
-THETA_USERNAME=your_username
-THETA_PASSWORD=your_password
-
-# Interactive Brokers（实盘）
-IBKR_USERNAME=your_username
-IBKR_PASSWORD=your_password
-IBKR_ACCOUNT=your_account
-
-# Alpaca（实盘）
-ALPACA_API_KEY=your_api_key
-ALPACA_API_SECRET=your_api_secret
-ALPACA_PAPER=true
-```
-
-### 配置文件
-
-编辑 `config/default.yaml`：
-
-```yaml
-backtesting:
-  data_source: yahoo
-  start_date: "2023-01-01"
-  end_date: "2024-01-01"
-  initial_cash: 100000
-  commission: 0.001
-
-live_trading:
-  broker: alpaca
-  paper_trading: true
-  risk_limit: 0.02
-  max_position_size: 0.1
-
-strategies:
-  buy_and_hold:
-    enabled: true
-    symbols: ["AAPL", "MSFT", "GOOGL"]
-  
-  momentum:
-    enabled: true
-    period: 20
-    symbols: ["TSLA", "NVDA"]
-```
-
----
-
-## 📊 回测报告示例
+## 项目结构
 
 ```
-=== Backtest Results ===
-Strategy: BuyAndHold
-Symbol: AAPL
-Period: 2023-01-01 to 2024-01-01
-
-Performance Metrics:
-┌─────────────────────┬──────────┐
-│ Metric              │ Value    │
-├─────────────────────┼──────────┤
-│ Total Return        │ 45.2%    │
-│ Annual Return       │ 45.2%    │
-│ Sharpe Ratio        │ 1.85     │
-│ Max Drawdown        │ -12.3%   │
-│ Win Rate            │ 65.0%    │
-│ Total Trades        │ 1        │
-└─────────────────────┴──────────┘
-
-Portfolio Value:
-- Initial: $100,000.00
-- Final: $145,200.00
-- Profit: $45,200.00 (+45.2%)
-
-[Chart: Portfolio Value Over Time]
-```
-
----
-
-## 📁 项目结构
-
-```
-lumibot-skill/
-├── SKILL.md              # OpenClaw Skill 描述
-├── README.md             # 本文档
-├── requirements.txt      # 依赖列表
+lumibot-openclaw-skill/
+├── __main__.py                       # v2 统一 CLI
 ├── scripts/
-│   ├── backtest.py       # 回测脚本
-│   ├── list_templates.py # 列出策略模板
-│   ├── create_strategy.py# 创建新策略
-│   └── show_results.py   # 显示回测结果
+│   ├── strategies/                   # v2 可插拔策略库
+│   │   ├── _base.py                  # Decision + StrategyBase
+│   │   ├── buy_and_hold.py
+│   │   ├── momentum.py
+│   │   ├── dual_ma.py
+│   │   ├── mean_reversion.py
+│   │   ├── rsi_reversal.py
+│   │   └── __init__.py               # STRATEGIES 注册表
+│   ├── simple_backtester.py          # v2 极简事件回测
+│   ├── compare.py                    # v2 多策略对比报告
+│   └── backtest.py                   # v1 legacy lumibot 单策略回测入口
+├── tests/                            # 43 个测试，无 lumibot 依赖
 ├── config/
-│   └── default.yaml      # 默认配置
-├── examples/
-│   ├── buy_and_hold.py   # 买入持有示例
-│   ├── momentum.py       # 动量策略示例
-│   └── grid_trading.py   # 网格交易示例
-└── references/
-    └── .env.example      # 环境变量模板
+│   └── default.yaml                  # 配置（v1）
+└── requirements.txt
 ```
 
----
+## 设计取舍
 
-## 🔧 故障排除
+- **不依赖 lumibot 也能用**：`decide()` 拆成纯函数后，CI、本地实验、教学场景
+  都能跑 —— lumibot 装起来要 ~30+ 包，绝大多数用户只是想看"我的策略大概是不是赚钱"。
+- **离线回测不模拟真实成交**：没有滑点 / 佣金 / 盘前盘后 / 部分成交。这是粗筛
+  工具，跑完后挑出几个候选再用 lumibot 真回测验证。
+- **策略默认 95% 仓位**：留 5% 现金应对真实场景的部分成交 + 手续费。要拉满改
+  `allocation=1.0`。
+- **不内置实盘交易包装**：lumibot 自己的 `IBKR` / `Alpaca` / `Tradier` broker 集成
+  已经完备，本仓库不重复造，需要实盘直接读 lumibot 文档。
 
-### 常见问题
+## 测试
 
-**Q: 数据获取失败**
-```
-A: 检查网络连接和 API 配置
-   - Yahoo Finance 可能有限流
-   - ThetaData 需要有效订阅
-```
-
-**Q: 回测速度慢**
-```
-A: 优化建议
-   - 减少回测周期
-   - 使用更快的数据源（ThetaData）
-   - 增加 sleeptime 间隔
+```bash
+pip install pytest
+pytest tests/ -v
 ```
 
-**Q: 策略报错**
-```
-A: 检查策略代码
-   - 确保 initialize() 方法正确
-   - 检查 on_trading_iteration() 逻辑
-   - 查看日志文件
-```
+43 个测试，全部跑在 100ms 内，无网络 / 无 lumibot 依赖。
 
-### 日志位置
+## 已知限制
 
-```
-~/.openclaw/workspace/logs/lumibot.log
-```
+- `mean_reversion` 用 z-score 阈值切买卖，过低的阈值容易频繁交易（trade count 见
+  compare 输出）。
+- `rsi_reversal` 用 SMA 版 RSI 而不是 Wilder 平滑版 —— 在收敛速度上略有差异但
+  足够指标化判断。
+- `compare` 默认按 Sharpe 排序，可能让人忽视最大回撤；自己读表时三个指标一起看。
+- 离线 compare 不能跑期权 / 加密货币 / 期货策略（数据接口没接），那些仍要走真
+  lumibot 路径。
 
----
+## 许可
 
-## 📚 策略模板库
-
-### 1. 买入持有（Buy and Hold）
-- **适用**: 长期投资
-- **风险**: 低
-- **复杂度**: 简单
-
-### 2. 动量策略（Momentum）
-- **适用**: 趋势跟踪
-- **风险**: 中
-- **复杂度**: 中等
-
-### 3. 网格交易（Grid Trading）
-- **适用**: 震荡市场
-- **风险**: 中
-- **复杂度**: 中等
-
-### 4. 均值回归（Mean Reversion）
-- **适用**: 震荡市场
-- **风险**: 中高
-- **复杂度**: 中等
-
-### 5. 配对交易（Pairs Trading）
-- **适用**: 市场中性
-- **风险**: 低中
-- **复杂度**: 高
-
----
-
-## 🙏 致谢
-
-- 原项目：[Lumibot](https://github.com/Lumiwealth/lumibot)
-- 数据源：[Yahoo Finance](https://finance.yahoo.com/), [ThetaData](https://www.thetadata.net/)
-- 社区：[Lumiwealth](https://lumiwealth.com/)
-
----
-
-## 📄 许可证
-
-MIT License
-
----
-
-## ⚠️ 免责声明
-
-本工具仅供教育和研究目的。不构成投资建议。
-
-交易有风险，投资需谨慎。请在充分了解风险的情况下使用本工具。
-
----
-
-_基于 [Lumibot](https://github.com/Lumiwealth/lumibot) 二次开发_
-_OpenClaw Skill 封装版本_
+MIT
