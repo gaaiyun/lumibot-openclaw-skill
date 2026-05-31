@@ -7,3 +7,4 @@ results/
 *.pkl
 .venv/
 venv/
+.pytest_cache/
